@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables (NEVER commit API keys!)
+.env
+
+# Streamlit
+.streamlit/secrets.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+streamlit.log
+
+# Large files
+*.png
+*.jpg
+*.jpeg
+*.html
+
+# Data files (exclude large datasets and indexes)
+data/raw/
+data/index.faiss
+data/metadata.pkl
+data/conversations.jsonl
+rag/faiss_index/
+rag/cache/
+
+# Only keep sample data
+!data/sample_conversations.jsonl
