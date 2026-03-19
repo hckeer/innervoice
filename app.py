@@ -516,20 +516,65 @@ def index_exists() -> bool:
 
 def show_index_missing_error():
     """Show helpful error when index is missing (should never happen in production)."""
+    from config import FAISS_INDEX_PATH, METADATA_PATH, SAMPLE_CONVERSATIONS_PATH, DATA_DIR, BASE_DIR
+    
     st.error("🚨 **FAISS Index Not Found**")
+    
+    # Show diagnostic information
+    with st.expander("🔍 Click here for diagnostic information"):
+        st.markdown("### File System Diagnostic")
+        st.write(f"**BASE_DIR:** `{BASE_DIR}`")
+        st.write(f"**DATA_DIR:** `{DATA_DIR}`")
+        st.write(f"**Expected index path:** `{FAISS_INDEX_PATH}`")
+        st.write(f"**Expected metadata path:** `{METADATA_PATH}`")
+        st.write(f"**Sample data path:** `{SAMPLE_CONVERSATIONS_PATH}`")
+        
+        st.markdown("### File Existence Check")
+        st.write(f"- Index exists: **{FAISS_INDEX_PATH.exists()}**")
+        st.write(f"- Metadata exists: **{METADATA_PATH.exists()}**")
+        st.write(f"- Sample data exists: **{SAMPLE_CONVERSATIONS_PATH.exists()}**")
+        st.write(f"- Data directory exists: **{DATA_DIR.exists()}**")
+        
+        if DATA_DIR.exists():
+            st.markdown("### Contents of data/ directory:")
+            try:
+                items = list(DATA_DIR.iterdir())
+                if items:
+                    for item in items:
+                        size = item.stat().st_size / (1024 * 1024) if item.is_file() else 0
+                        st.write(f"- `{item.name}` {f'({size:.2f} MB)' if item.is_file() else '(dir)'}")
+                else:
+                    st.write("*(Directory is empty)*")
+            except Exception as e:
+                st.write(f"Error reading directory: {e}")
+        
+        st.markdown("### Current Working Directory")
+        st.write(f"`{Path.cwd()}`")
+        
+        try:
+            st.markdown("### Contents of current directory:")
+            for item in sorted(Path.cwd().iterdir())[:20]:  # Show first 20 items
+                st.write(f"- `{item.name}`")
+        except:
+            pass
+    
     st.markdown("""
+    ---
+    ### What This Means
+    
     The search index is missing. This usually means the deployment failed.
     
     **For Production (Render):**
     - The index should be built automatically during deployment
     - Check build logs for errors in `build_index_production.py`
+    - Look for "BUILD SUCCESSFUL" message in logs
     
     **For Local Development:**
     ```bash
     python build_index_production.py
     ```
     
-    **Contact Support:** If this error persists in production, please report it.
+    **Contact Support:** If this error persists in production, please report it with the diagnostic info above.
     """)
     st.stop()
 
