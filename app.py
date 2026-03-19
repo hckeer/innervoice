@@ -514,75 +514,24 @@ def index_exists() -> bool:
     return FAISS_INDEX_PATH.exists()
 
 
-def auto_build_index():
-    """
-    Automatically build FAISS index from sample data if not found.
-    This runs on production startup when no index exists.
-    """
-    import json
-    import pickle
-    import numpy as np
-    import faiss
-    from sentence_transformers import SentenceTransformer
-    from config import (
-        FAISS_INDEX_PATH,
-        METADATA_PATH,
-        SAMPLE_CONVERSATIONS_PATH,
-        EMBEDDING_MODEL,
-        EMBEDDING_BATCH_SIZE,
-    )
+def show_index_missing_error():
+    """Show helpful error when index is missing (should never happen in production)."""
+    st.error("🚨 **FAISS Index Not Found**")
+    st.markdown("""
+    The search index is missing. This usually means the deployment failed.
     
-    st.info("🔨 Building FAISS index from sample data... This will take a few minutes on first startup.")
+    **For Production (Render):**
+    - The index should be built automatically during deployment
+    - Check build logs for errors in `build_index_production.py`
     
-    # Load sample conversations
-    records = []
-    if SAMPLE_CONVERSATIONS_PATH.exists():
-        with open(SAMPLE_CONVERSATIONS_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        records.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
+    **For Local Development:**
+    ```bash
+    python build_index_production.py
+    ```
     
-    if not records:
-        st.error("❌ No sample data found. Cannot build index.")
-        return False
-    
-    st.write(f"📚 Loaded {len(records):,} sample conversations")
-    
-    # Load embedding model
-    with st.spinner(f"Loading embedding model: {EMBEDDING_MODEL}..."):
-        model = SentenceTransformer(EMBEDDING_MODEL)
-    
-    # Extract texts and build embeddings
-    texts = [r["input"] for r in records]
-    
-    with st.spinner(f"Embedding {len(texts):,} texts... This may take 2-5 minutes..."):
-        embeddings = model.encode(
-            texts,
-            batch_size=EMBEDDING_BATCH_SIZE,
-            show_progress_bar=False,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )
-    
-    # Build FAISS index
-    dim = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dim)
-    index.add(embeddings.astype(np.float32))
-    
-    # Save index
-    FAISS_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(FAISS_INDEX_PATH))
-    
-    # Save metadata
-    with open(METADATA_PATH, "wb") as f:
-        pickle.dump(records, f)
-    
-    st.success(f"✅ Index built successfully! Indexed {index.ntotal:,} vectors")
-    return True
+    **Contact Support:** If this error persists in production, please report it.
+    """)
+    st.stop()
 
 
 def history_to_text(history: list[dict]) -> str:
@@ -690,19 +639,6 @@ tab_chat, tab_ocr, tab_settings, tab_index = st.tabs(
     ["💬 Chat Assistant", "📸 OCR Input", "⚙️ Settings", "📊 Index Info dev"]
 )
 
-# ── Auto-build index on first run ────────────────────────────────────────────
-if not index_exists() and "index_build_attempted" not in st.session_state:
-    st.session_state.index_build_attempted = True
-    with st.container():
-        st.warning("🔨 First-time setup: Building search index from sample data...")
-        if auto_build_index():
-            st.success("✅ Setup complete! You can now use InnerVoice.")
-            time.sleep(2)
-            st.rerun()
-        else:
-            st.error("❌ Failed to build index. Please contact support.")
-            st.stop()
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB 1: Chat Assistant
@@ -731,11 +667,7 @@ with tab_chat:
         if user_input:
             st.write(f"DEBUG: Processing input: {user_input[:50]}")  # Debug log
             if not index_exists():
-                st.warning("⚠️ No FAISS index found. Building from sample data...")
-                if auto_build_index():
-                    st.rerun()  # Reload the app after building index
-                else:
-                    st.stop()  # Stop if build failed
+                show_index_missing_error()
             else:
                 try:
                     # Add user message to history
