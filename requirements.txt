@@ -5,7 +5,6 @@
 # Force CPU-only PyTorch (prevent 4GB GPU dependencies)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.10.0+cpu
-torchvision==0.20.0+cpu
 
 # Core RAG dependencies
 sentence-transformers>=2.7.0
