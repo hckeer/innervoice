@@ -520,62 +520,138 @@ def show_index_missing_error():
     
     st.error("🚨 **FAISS Index Not Found**")
     
-    # Show diagnostic information
-    with st.expander("🔍 Click here for diagnostic information"):
-        st.markdown("### File System Diagnostic")
-        st.write(f"**BASE_DIR:** `{BASE_DIR}`")
-        st.write(f"**DATA_DIR:** `{DATA_DIR}`")
-        st.write(f"**Expected index path:** `{FAISS_INDEX_PATH}`")
-        st.write(f"**Expected metadata path:** `{METADATA_PATH}`")
-        st.write(f"**Sample data path:** `{SAMPLE_CONVERSATIONS_PATH}`")
+    # Check if we can build it now
+    if SAMPLE_CONVERSATIONS_PATH.exists():
+        st.warning("⚙️ The index is missing but sample data exists. Would you like to build it now?")
         
-        st.markdown("### File Existence Check")
-        st.write(f"- Index exists: **{FAISS_INDEX_PATH.exists()}**")
-        st.write(f"- Metadata exists: **{METADATA_PATH.exists()}**")
-        st.write(f"- Sample data exists: **{SAMPLE_CONVERSATIONS_PATH.exists()}**")
-        st.write(f"- Data directory exists: **{DATA_DIR.exists()}**")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔨 Build Index Now", type="primary", use_container_width=True):
+                import subprocess
+                import sys
+                
+                with st.spinner("Building FAISS index... This may take 1-2 minutes."):
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, "build_index_production.py"],
+                            capture_output=True,
+                            text=True,
+                            cwd=str(BASE_DIR),
+                            timeout=300  # 5 minute timeout
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success("✅ Index built successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Build failed!")
+                            with st.expander("Show build output"):
+                                st.code(result.stdout + "\n\n" + result.stderr)
+                    except subprocess.TimeoutExpired:
+                        st.error("❌ Build timed out (>5 minutes). This might indicate memory issues.")
+                    except Exception as e:
+                        st.error(f"❌ Build error: {e}")
         
-        if DATA_DIR.exists():
-            st.markdown("### Contents of data/ directory:")
+        with col2:
+            if st.button("📋 Show Diagnostics", use_container_width=True):
+                st.session_state['_show_diagnostics'] = True
+        
+        # Show diagnostics if requested
+        if st.session_state.get('_show_diagnostics', False):
+            with st.expander("🔍 Diagnostic Information", expanded=True):
+                st.markdown("### File System Diagnostic")
+                st.write(f"**BASE_DIR:** `{BASE_DIR}`")
+                st.write(f"**DATA_DIR:** `{DATA_DIR}`")
+                st.write(f"**Expected index path:** `{FAISS_INDEX_PATH}`")
+                st.write(f"**Expected metadata path:** `{METADATA_PATH}`")
+                st.write(f"**Sample data path:** `{SAMPLE_CONVERSATIONS_PATH}`")
+                
+                st.markdown("### File Existence Check")
+                st.write(f"- Index exists: **{FAISS_INDEX_PATH.exists()}**")
+                st.write(f"- Metadata exists: **{METADATA_PATH.exists()}**")
+                st.write(f"- Sample data exists: **{SAMPLE_CONVERSATIONS_PATH.exists()}**")
+                st.write(f"- Data directory exists: **{DATA_DIR.exists()}**")
+                
+                if DATA_DIR.exists():
+                    st.markdown("### Contents of data/ directory:")
+                    try:
+                        items = list(DATA_DIR.iterdir())
+                        if items:
+                            for item in items:
+                                size = item.stat().st_size / (1024 * 1024) if item.is_file() else 0
+                                st.write(f"- `{item.name}` {f'({size:.2f} MB)' if item.is_file() else '(dir)'}")
+                        else:
+                            st.write("*(Directory is empty)*")
+                    except Exception as e:
+                        st.write(f"Error reading directory: {e}")
+                
+                st.markdown("### Current Working Directory")
+                st.write(f"`{Path.cwd()}`")
+                
+                try:
+                    st.markdown("### Contents of current directory:")
+                    for item in sorted(Path.cwd().iterdir())[:20]:  # Show first 20 items
+                        st.write(f"- `{item.name}`")
+                except:
+                    pass
+    else:
+        # Original diagnostic info for when sample data is also missing
+        with st.expander("🔍 Click here for diagnostic information"):
+            st.markdown("### File System Diagnostic")
+            st.write(f"**BASE_DIR:** `{BASE_DIR}`")
+            st.write(f"**DATA_DIR:** `{DATA_DIR}`")
+            st.write(f"**Expected index path:** `{FAISS_INDEX_PATH}`")
+            st.write(f"**Expected metadata path:** `{METADATA_PATH}`")
+            st.write(f"**Sample data path:** `{SAMPLE_CONVERSATIONS_PATH}`")
+            
+            st.markdown("### File Existence Check")
+            st.write(f"- Index exists: **{FAISS_INDEX_PATH.exists()}**")
+            st.write(f"- Metadata exists: **{METADATA_PATH.exists()}**")
+            st.write(f"- Sample data exists: **{SAMPLE_CONVERSATIONS_PATH.exists()}**")
+            st.write(f"- Data directory exists: **{DATA_DIR.exists()}**")
+            
+            if DATA_DIR.exists():
+                st.markdown("### Contents of data/ directory:")
+                try:
+                    items = list(DATA_DIR.iterdir())
+                    if items:
+                        for item in items:
+                            size = item.stat().st_size / (1024 * 1024) if item.is_file() else 0
+                            st.write(f"- `{item.name}` {f'({size:.2f} MB)' if item.is_file() else '(dir)'}")
+                    else:
+                        st.write("*(Directory is empty)*")
+                except Exception as e:
+                    st.write(f"Error reading directory: {e}")
+            
+            st.markdown("### Current Working Directory")
+            st.write(f"`{Path.cwd()}`")
+            
             try:
-                items = list(DATA_DIR.iterdir())
-                if items:
-                    for item in items:
-                        size = item.stat().st_size / (1024 * 1024) if item.is_file() else 0
-                        st.write(f"- `{item.name}` {f'({size:.2f} MB)' if item.is_file() else '(dir)'}")
-                else:
-                    st.write("*(Directory is empty)*")
-            except Exception as e:
-                st.write(f"Error reading directory: {e}")
+                st.markdown("### Contents of current directory:")
+                for item in sorted(Path.cwd().iterdir())[:20]:  # Show first 20 items
+                    st.write(f"- `{item.name}`")
+            except:
+                pass
         
-        st.markdown("### Current Working Directory")
-        st.write(f"`{Path.cwd()}`")
+        st.markdown("""
+        ---
+        ### What This Means
         
-        try:
-            st.markdown("### Contents of current directory:")
-            for item in sorted(Path.cwd().iterdir())[:20]:  # Show first 20 items
-                st.write(f"- `{item.name}`")
-        except:
-            pass
+        The search index is missing. This usually means the deployment failed.
+        
+        **For Production (Render):**
+        - The index should be built automatically during deployment
+        - Check build logs for errors in `build_index_production.py`
+        - Look for "BUILD SUCCESSFUL" message in logs
+        
+        **For Local Development:**
+        ```bash
+        python build_index_production.py
+        ```
+        
+        **Contact Support:** If this error persists in production, please report it with the diagnostic info above.
+        """)
     
-    st.markdown("""
-    ---
-    ### What This Means
-    
-    The search index is missing. This usually means the deployment failed.
-    
-    **For Production (Render):**
-    - The index should be built automatically during deployment
-    - Check build logs for errors in `build_index_production.py`
-    - Look for "BUILD SUCCESSFUL" message in logs
-    
-    **For Local Development:**
-    ```bash
-    python build_index_production.py
-    ```
-    
-    **Contact Support:** If this error persists in production, please report it with the diagnostic info above.
-    """)
     st.stop()
 
 

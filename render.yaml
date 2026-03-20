@@ -4,9 +4,27 @@ services:
     runtime: python
     plan: free
     buildCommand: |
+      echo "=== RENDER BUILD START ==="
+      echo "Working directory: $(pwd)"
+      echo "Python version: $(python --version)"
+      echo "Pip version: $(pip --version)"
+      
+      echo "=== Installing dependencies ==="
       pip install --upgrade pip
       pip install -r requirements.txt
-      python build_index_production.py
+      
+      echo "=== Checking sample data ==="
+      ls -lah data/ || echo "data/ directory not found"
+      ls -lah data/sample_conversations.jsonl || echo "sample_conversations.jsonl not found"
+      
+      echo "=== Building FAISS index ==="
+      python build_index_production.py || exit 1
+      
+      echo "=== Verifying index files ==="
+      ls -lah data/index.faiss || { echo "ERROR: index.faiss not created!"; exit 1; }
+      ls -lah data/metadata.pkl || { echo "ERROR: metadata.pkl not created!"; exit 1; }
+      
+      echo "=== BUILD SUCCESS ==="
     startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false
     envVars:
       - key: PYTHON_VERSION

@@ -186,6 +186,13 @@ print(f"   Metadata file: {METADATA_PATH}")
 print(f"   - Exists: {METADATA_PATH.exists()}")
 print(f"   - Size: {METADATA_PATH.stat().st_size / (1024 * 1024):.2f} MB")
 
+# Validate index size for production constraints (Render Free Tier = 512MB RAM)
+MAX_INDEX_SIZE_MB = 100  # Conservative limit for 512MB RAM
+if index_size_mb > MAX_INDEX_SIZE_MB:
+    print(f"\n⚠️  WARNING: Index size ({index_size_mb:.2f} MB) exceeds recommended limit ({MAX_INDEX_SIZE_MB} MB)")
+    print(f"   This may cause memory issues on Render Free Tier (512MB RAM limit)")
+    print(f"   Consider reducing the sample dataset size")
+
 if INDEX_PATH.exists() and METADATA_PATH.exists():
     print("\n" + "=" * 80)
     print("✅ BUILD SUCCESSFUL - Index ready for production")
@@ -193,6 +200,19 @@ if INDEX_PATH.exists() and METADATA_PATH.exists():
     print(f"\n📂 Files created in: {DATA_DIR}")
     print(f"   - index.faiss ({index_size_mb:.2f} MB)")
     print(f"   - metadata.pkl ({metadata_size_mb:.2f} MB)")
+    print(f"\n📊 Production readiness:")
+    print(f"   - Records indexed: {len(records):,}")
+    print(f"   - Vector dimension: {dim}")
+    print(f"   - Memory footprint: ~{(index_size_mb + metadata_size_mb):.1f} MB")
+    
+    # Calculate estimated RAM usage
+    estimated_ram_mb = (index_size_mb + metadata_size_mb) * 2.5  # 2.5x for runtime overhead
+    print(f"   - Estimated runtime RAM: ~{estimated_ram_mb:.0f} MB")
+    
+    if estimated_ram_mb > 450:  # Leave 60MB buffer for Streamlit + app
+        print(f"\n⚠️  WARNING: Estimated RAM usage ({estimated_ram_mb:.0f} MB) may exceed Render free tier limit!")
+        print(f"   Recommendation: Reduce sample dataset to {int(len(records) * 450 / estimated_ram_mb):,} records")
+    
     sys.exit(0)
 else:
     print("\n❌ ERROR: Files not created properly")
