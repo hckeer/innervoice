@@ -517,6 +517,8 @@ def index_exists() -> bool:
 def show_index_missing_error():
     """Show helpful error when index is missing (should never happen in production)."""
     from config import FAISS_INDEX_PATH, METADATA_PATH, SAMPLE_CONVERSATIONS_PATH, DATA_DIR, BASE_DIR
+    import subprocess
+    import sys
     
     st.error("🚨 **FAISS Index Not Found**")
     
@@ -526,10 +528,16 @@ def show_index_missing_error():
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔨 Build Index Now", type="primary", use_container_width=True):
-                import subprocess
-                import sys
-                
+            # Use session state to track build action
+            if 'building_index' not in st.session_state:
+                st.session_state.building_index = False
+            
+            build_clicked = st.button("🔨 Build Index Now", type="primary", use_container_width=True, key="build_index_btn")
+            
+            if build_clicked:
+                st.session_state.building_index = True
+            
+            if st.session_state.building_index:
                 with st.spinner("Building FAISS index... This may take 1-2 minutes."):
                     try:
                         result = subprocess.run(
@@ -542,19 +550,25 @@ def show_index_missing_error():
                         
                         if result.returncode == 0:
                             st.success("✅ Index built successfully!")
+                            st.session_state.building_index = False
+                            time.sleep(1)  # Give user time to see success message
                             st.rerun()
                         else:
                             st.error("❌ Build failed!")
+                            st.session_state.building_index = False
                             with st.expander("Show build output"):
                                 st.code(result.stdout + "\n\n" + result.stderr)
                     except subprocess.TimeoutExpired:
                         st.error("❌ Build timed out (>5 minutes). This might indicate memory issues.")
+                        st.session_state.building_index = False
                     except Exception as e:
                         st.error(f"❌ Build error: {e}")
+                        st.session_state.building_index = False
         
         with col2:
-            if st.button("📋 Show Diagnostics", use_container_width=True):
-                st.session_state['_show_diagnostics'] = True
+            show_diag = st.button("📋 Show Diagnostics", use_container_width=True, key="show_diag_btn")
+            if show_diag:
+                st.session_state['_show_diagnostics'] = not st.session_state.get('_show_diagnostics', False)
         
         # Show diagnostics if requested
         if st.session_state.get('_show_diagnostics', False):
@@ -596,7 +610,7 @@ def show_index_missing_error():
                     pass
     else:
         # Original diagnostic info for when sample data is also missing
-        with st.expander("🔍 Click here for diagnostic information"):
+        with st.expander("🔍 Click here for diagnostic information", expanded=True):
             st.markdown("### File System Diagnostic")
             st.write(f"**BASE_DIR:** `{BASE_DIR}`")
             st.write(f"**DATA_DIR:** `{DATA_DIR}`")
@@ -637,19 +651,26 @@ def show_index_missing_error():
         ---
         ### What This Means
         
-        The search index is missing. This usually means the deployment failed.
+        The search index AND sample data are both missing. This usually means:
         
         **For Production (Render):**
-        - The index should be built automatically during deployment
-        - Check build logs for errors in `build_index_production.py`
-        - Look for "BUILD SUCCESSFUL" message in logs
+        - The repository might not have been cloned correctly
+        - Check that `data/sample_conversations.jsonl` is committed to git
+        - Verify build logs for errors
         
         **For Local Development:**
         ```bash
+        # Check if sample data exists
+        ls -lh data/sample_conversations.jsonl
+        
+        # If missing, check git
+        git status
+        
+        # If present, build index
         python build_index_production.py
         ```
         
-        **Contact Support:** If this error persists in production, please report it with the diagnostic info above.
+        **Contact Support:** If this error persists, please report it with the diagnostic info above.
         """)
     
     st.stop()
@@ -755,6 +776,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ── Check Index Before Rendering Main UI ──────────────────────────────────────
+# This must happen BEFORE tabs are created, otherwise button states get lost
+if not index_exists():
+    show_index_missing_error()
+    # st.stop() is called inside show_index_missing_error(), execution stops here
+
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_chat, tab_ocr, tab_settings, tab_index = st.tabs(
     ["💬 Chat Assistant", "📸 OCR Input", "⚙️ Settings", "📊 Index Info dev"]
@@ -786,54 +814,47 @@ with tab_chat:
 
         # Process input when user submits
         if user_input:
-            st.write(f"DEBUG: Processing input: {user_input[:50]}")  # Debug log
-            if not index_exists():
-                show_index_missing_error()
-            else:
-                try:
-                    # Add user message to history
-                    st.session_state.history.append({"role": "user", "content": user_input})
+            try:
+                # Add user message to history
+                st.session_state.history.append({"role": "user", "content": user_input})
 
-                    st.write("DEBUG: Getting pipeline...")  # Debug log
-                    pipeline = get_or_create_async_pipeline()
-                    session_id = st.session_state.get("session_id", "default")
+                pipeline = get_or_create_async_pipeline()
+                session_id = st.session_state.get("session_id", "default")
 
-                    # Generate assistant response
-                    s = st.session_state.settings
-                    
-                    # Use async pipeline
-                    st.write("DEBUG: Calling sync_suggest_reply...")  # Debug log
-                    start_time = time.time()
-                    with st.spinner("Generating personality-driven reply …"):
-                        result = sync_suggest_reply(
-                            pipeline=pipeline,
-                            user_message=user_input,
-                            session_id=session_id,
-                            k=s["top_k"],
-                        )
-                    
-                    st.write("DEBUG: Got result")  # Debug log
-                    latency_ms = (time.time() - start_time) * 1000
-                    
-                    reply = result["reply"]
-                    emotion = result.get("emotion", "neutral")
-                    confidence = result.get("confidence", 0.0)
-                    sources = result["sources"]
-                    cached = result.get("cached", False)
+                # Generate assistant response
+                s = st.session_state.settings
+                
+                # Use async pipeline
+                start_time = time.time()
+                with st.spinner("Generating personality-driven reply …"):
+                    result = sync_suggest_reply(
+                        pipeline=pipeline,
+                        user_message=user_input,
+                        session_id=session_id,
+                        k=s["top_k"],
+                    )
+                
+                latency_ms = (time.time() - start_time) * 1000
+                
+                reply = result["reply"]
+                emotion = result.get("emotion", "neutral")
+                confidence = result.get("confidence", 0.0)
+                sources = result["sources"]
+                cached = result.get("cached", False)
 
-                    # Add assistant response to history
-                    st.session_state.history.append({"role": "assistant", "content": reply})
+                # Add assistant response to history
+                st.session_state.history.append({"role": "assistant", "content": reply})
 
-                    # Store for context panel
-                    st.session_state["_last_context"] = result.get("context", "")
-                    st.session_state["_last_sources"] = sources
-                    st.session_state["_last_emotion"] = emotion
-                    st.session_state["_last_confidence"] = confidence
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {type(e).__name__}: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
+                # Store for context panel
+                st.session_state["_last_context"] = result.get("context", "")
+                st.session_state["_last_sources"] = sources
+                st.session_state["_last_emotion"] = emotion
+                st.session_state["_last_confidence"] = confidence
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error: {type(e).__name__}: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
 
         # Clear history button
         if st.session_state.history:
@@ -962,31 +983,28 @@ with tab_ocr:
         st.text_input("Latest message to reply to:", value=latest_msg, key="ocr_query")
 
         if st.button("🤖 Suggest Reply for this Conversation"):
-            if not index_exists():
-                st.error("⚠️ Build the FAISS index first: `python scripts/build_index.py`")
-            else:
-                query = st.session_state.get("ocr_query", latest_msg)
-                pipeline = get_or_create_async_pipeline()
-                session_id = st.session_state.get("session_id", "default")
-                
-                with st.spinner("Retrieving context and generating reply …"):
-                    result = sync_suggest_reply(
-                        pipeline=pipeline,
-                        user_message=query,
-                        session_id=session_id,
-                        k=st.session_state.settings["top_k"],
-                    )
-                
-                st.markdown("#### 💡 Suggested Reply")
-                st.markdown(f'<div class="reply-box">{result["reply"]}</div>', unsafe_allow_html=True)
-                
-                # Show emotion
-                emotion = result.get("emotion", "neutral")
-                confidence = result.get("confidence", 0.0)
-                st.info(f"💭 Detected emotion: {emotion.title()} ({confidence:.0%} confidence)")
+            query = st.session_state.get("ocr_query", latest_msg)
+            pipeline = get_or_create_async_pipeline()
+            session_id = st.session_state.get("session_id", "default")
+            
+            with st.spinner("Retrieving context and generating reply …"):
+                result = sync_suggest_reply(
+                    pipeline=pipeline,
+                    user_message=query,
+                    session_id=session_id,
+                    k=st.session_state.settings["top_k"],
+                )
+            
+            st.markdown("#### 💡 Suggested Reply")
+            st.markdown(f'<div class="reply-box">{result["reply"]}</div>', unsafe_allow_html=True)
+            
+            # Show emotion
+            emotion = result.get("emotion", "neutral")
+            confidence = result.get("confidence", 0.0)
+            st.info(f"💭 Detected emotion: {emotion.title()} ({confidence:.0%} confidence)")
 
-                with st.expander("📚 Retrieved Context"):
-                    st.text(result.get("context", ""))
+            with st.expander("📚 Retrieved Context"):
+                st.text(result.get("context", ""))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
