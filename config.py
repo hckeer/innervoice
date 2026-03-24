@@ -39,6 +39,12 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 
+# ── Qdrant Cloud Configuration ───────────────────────────────────────────────
+USE_QDRANT = os.getenv("USE_QDRANT", "false").lower() == "true"
+QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "conversations")
+
 # Ensure data directories exist at import time
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,8 +52,13 @@ RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Production readiness check
 def check_production_ready() -> bool:
     """Check if required files exist for production deployment."""
-    return (
-        FAISS_INDEX_PATH.exists() and 
-        METADATA_PATH.exists() and 
-        SAMPLE_CONVERSATIONS_PATH.exists()
-    )
+    if USE_QDRANT:
+        # For Qdrant mode, only need credentials
+        return bool(QDRANT_URL and QDRANT_API_KEY)
+    else:
+        # For FAISS mode, need local index files
+        return (
+            FAISS_INDEX_PATH.exists() and 
+            METADATA_PATH.exists() and 
+            SAMPLE_CONVERSATIONS_PATH.exists()
+        )

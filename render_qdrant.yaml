@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: innervoice
+    runtime: python
+    plan: free
+    buildCommand: |
+      echo "=== RENDER BUILD START (Qdrant Mode) ==="
+      echo "Working directory: $(pwd)"
+      echo "Python version: $(python --version)"
+      
+      echo "=== Installing dependencies ==="
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      
+      echo "=== Verifying Qdrant configuration ==="
+      python -c "from config import USE_QDRANT, QDRANT_URL; print(f'USE_QDRANT={USE_QDRANT}'); print(f'QDRANT_URL={QDRANT_URL[:50]}...' if QDRANT_URL else 'QDRANT_URL not set')"
+      
+      echo "=== BUILD SUCCESS (No FAISS index needed - using Qdrant Cloud) ==="
+    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: GROQ_API_KEY
+        sync: false
+      - key: USE_QDRANT
+        value: true
+      - key: QDRANT_URL
+        value: https://f22a7b8d-64cd-446a-9399-4fa98688472a.us-east4-0.gcp.cloud.qdrant.io:6333
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: conversations
+    healthCheckPath: /_stcore/health

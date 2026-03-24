@@ -104,65 +104,110 @@ class AsyncRAGPipeline:
         self.memory = ConversationMemory(max_turns=5)
         
         # Load vector store and initialize retriever
-        from rag.vector_store_async import AsyncVectorStore
+        from config import USE_QDRANT, QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
         from config import FAISS_INDEX_PATH, METADATA_PATH
         
-        self.vector_store = AsyncVectorStore()
-        
-        # Load index synchronously during initialization
-        # (Streamlit cache will ensure this only happens once)
-        import asyncio
-        if FAISS_INDEX_PATH.exists() and METADATA_PATH.exists():
-            try:
-                # Use asyncio.run if no event loop, otherwise use existing loop
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Can't use run() in running loop, load synchronously
-                        import faiss
-                        import pickle
-                        self.vector_store.index = faiss.read_index(str(FAISS_INDEX_PATH))
-                        with open(METADATA_PATH, "rb") as f:
-                            self.vector_store.metadata = pickle.load(f)
-                        logger.info(f"Loaded {self.vector_store.index.ntotal:,} vectors")
-                    else:
-                        asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
-                except RuntimeError:
-                    # No event loop, create one
-                    asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
-            except Exception as e:
-                logger.error(f"Failed to load index: {e}")
+        if USE_QDRANT:
+            # Use Qdrant Cloud
+            logger.info("Using Qdrant Cloud vector store")
+            from rag.qdrant_vector_store import QdrantVectorStore
+            
+            if not QDRANT_URL or not QDRANT_API_KEY:
                 raise RuntimeError(
-                    f"Cannot initialize pipeline: Index loading failed. "
-                    f"Please run: python scripts/build_index.py"
-                ) from e
+                    "Qdrant credentials missing. Set QDRANT_URL and QDRANT_API_KEY in .env"
+                )
+            
+            self.vector_store = QdrantVectorStore(
+                url=QDRANT_URL,
+                api_key=QDRANT_API_KEY,
+                collection_name=QDRANT_COLLECTION,
+                embedding_dim=384
+            )
+            
+            # Load/initialize collection
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Sync load in running loop
+                    import asyncio as _asyncio
+                    _asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
+                else:
+                    asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
+            except RuntimeError:
+                asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
+            
+            logger.info(f"Qdrant collection loaded: {self.vector_store.size:,} points")
+            
+            # For hybrid retriever, we need metadata
+            # In Qdrant mode, we'll fetch a sample for BM25 index
+            # Note: This is a simplified approach - for production, consider building BM25 separately
+            logger.warning("Hybrid retriever may have limited BM25 functionality in Qdrant mode")
+            self.vector_store.metadata = []  # Will be populated on-demand
+            
         else:
-            raise RuntimeError(
-                f"FAISS index not found at {FAISS_INDEX_PATH}. "
-                f"Please run: python scripts/build_index.py"
-            )
-        
-        # Check if we have data
-        if not self.vector_store.metadata:
-            raise RuntimeError(
-                "Metadata is empty. Please rebuild the index: "
-                "python scripts/build_index.py"
-            )
+            # Use local FAISS
+            logger.info("Using local FAISS vector store")
+            from rag.vector_store_async import AsyncVectorStore
+            
+            self.vector_store = AsyncVectorStore()
+            
+            # Load index synchronously during initialization
+            # (Streamlit cache will ensure this only happens once)
+            import asyncio
+            if FAISS_INDEX_PATH.exists() and METADATA_PATH.exists():
+                try:
+                    # Use asyncio.run if no event loop, otherwise use existing loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Can't use run() in running loop, load synchronously
+                            import faiss
+                            import pickle
+                            self.vector_store.index = faiss.read_index(str(FAISS_INDEX_PATH))
+                            with open(METADATA_PATH, "rb") as f:
+                                self.vector_store.metadata = pickle.load(f)
+                            logger.info(f"Loaded {self.vector_store.index.ntotal:,} vectors")
+                        else:
+                            asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
+                    except RuntimeError:
+                        # No event loop, create one
+                        asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
+                except Exception as e:
+                    logger.error(f"Failed to load index: {e}")
+                    raise RuntimeError(
+                        f"Cannot initialize pipeline: Index loading failed. "
+                        f"Please run: python scripts/build_index.py"
+                    ) from e
+            else:
+                raise RuntimeError(
+                    f"FAISS index not found at {FAISS_INDEX_PATH}. "
+                    f"Please run: python scripts/build_index.py"
+                )
+            
+            # Check if we have data
+            if not self.vector_store.metadata:
+                raise RuntimeError(
+                    "Metadata is empty. Please rebuild the index: "
+                    "python scripts/build_index.py"
+                )
         
         # Initialize hybrid retriever with loaded data
+        # Note: For Qdrant, metadata list may be empty - retriever will work in vector-only mode
         self.retriever = HybridRetriever(
             vector_store=self.vector_store,
-            metadata=self.vector_store.metadata,
+            metadata=getattr(self.vector_store, 'metadata', []),
         )
         
         # Simple in-memory cache (query -> response)
         # For production, use Redis or similar
         self._response_cache: dict[str, PipelineResult] = {}
         
+        corpus_size = len(getattr(self.vector_store, 'metadata', [])) or self.vector_store.size
         logger.info(
             f"AsyncRAGPipeline initialized: model={self.model}, "
             f"top_k={self.top_k}, cache_enabled={self.enable_cache}, "
-            f"corpus_size={len(self.vector_store.metadata)}"
+            f"corpus_size={corpus_size}, use_qdrant={USE_QDRANT}"
         )
 
     async def suggest_reply(

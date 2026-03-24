@@ -510,8 +510,15 @@ def llm_status():
 
 
 def index_exists() -> bool:
-    from config import FAISS_INDEX_PATH
-    return FAISS_INDEX_PATH.exists()
+    """Check if vector store is ready (FAISS or Qdrant)."""
+    from config import USE_QDRANT, FAISS_INDEX_PATH, check_production_ready
+    
+    if USE_QDRANT:
+        # For Qdrant mode, check if credentials are configured
+        return check_production_ready()
+    else:
+        # For FAISS mode, check if index file exists
+        return FAISS_INDEX_PATH.exists()
 
 
 def show_index_missing_error():

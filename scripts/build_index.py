@@ -109,7 +109,8 @@ def build_index(src_path: Path, verify: bool = False) -> None:
     # Load embedding model (use cache if available)
     print(f"\nLoading embedding model: {EMBEDDING_MODEL}")
     if MODEL_CACHE_AVAILABLE:
-        model = ModelCache.get_embedding_model()
+        from rag.model_cache import get_model
+        model = get_model(EMBEDDING_MODEL)
         print("  (using global model cache)")
     else:
         model = SentenceTransformer(EMBEDDING_MODEL)

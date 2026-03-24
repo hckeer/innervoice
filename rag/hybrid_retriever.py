@@ -39,10 +39,16 @@ class HybridRetriever:
         self.use_reranking = use_reranking
         self.alpha = alpha
         
-        # Build BM25 index
-        self.corpus = [record["input"] for record in metadata]
-        tokenized_corpus = [doc.lower().split() for doc in self.corpus]
-        self.bm25 = BM25Okapi(tokenized_corpus)
+        # Build BM25 index (skip if no metadata, e.g., Qdrant mode)
+        self.corpus = []
+        self.bm25 = None
+        if metadata:
+            self.corpus = [record["input"] for record in metadata]
+            tokenized_corpus = [doc.lower().split() for doc in self.corpus]
+            self.bm25 = BM25Okapi(tokenized_corpus)
+            logger.info(f"BM25 index built with {len(self.corpus)} documents")
+        else:
+            logger.warning("No metadata provided - BM25 search disabled (vector-only mode)")
         
         # Emotion detector
         self.emotion_detector = EmotionDetector()
@@ -134,6 +140,10 @@ class HybridRetriever:
     
     def _bm25_search(self, query: str, k: int) -> Dict[str, float]:
         """BM25 keyword search."""
+        if not self.bm25:
+            # BM25 disabled (e.g., Qdrant mode)
+            return {}
+        
         try:
             tokenized_query = query.lower().split()
             scores = self.bm25.get_scores(tokenized_query)

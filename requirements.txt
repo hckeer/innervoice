@@ -9,6 +9,7 @@ torch==2.10.0+cpu
 # Core RAG dependencies
 sentence-transformers>=2.7.0
 faiss-cpu>=1.8.0
+qdrant-client>=1.7.0
 numpy>=1.26.0,<2.5.0
 
 # LLM / Groq
