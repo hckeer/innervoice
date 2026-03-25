@@ -232,3 +232,5 @@ pip install pytesseract Pillow
 | `pytesseract` | ≥0.3.10 | OCR (optional) |
 | `Pillow` | ≥10.2 | Image processing |
 | `python-dotenv` | ≥1.0 | Environment config |
+
+---
