@@ -32,7 +32,14 @@ import time
 from typing import AsyncGenerator, Optional
 from dataclasses import dataclass
 
-from config import GROQ_MODEL, TOP_K, MAX_TOKENS, TEMPERATURE
+from config import (
+    GROQ_MODEL,
+    TOP_K,
+    MAX_TOKENS,
+    TEMPERATURE,
+    ENABLE_RERANKING,
+    QDRANT_TIMEOUT_SECONDS,
+)
 from rag.llm_client_async import AsyncLLMClient
 from rag.hybrid_retriever import HybridRetriever
 from rag.emotion_detector import EmotionDetector
@@ -121,21 +128,24 @@ class AsyncRAGPipeline:
                 url=QDRANT_URL,
                 api_key=QDRANT_API_KEY,
                 collection_name=QDRANT_COLLECTION,
-                embedding_dim=384
+                embedding_dim=384,
+                timeout_seconds=QDRANT_TIMEOUT_SECONDS,
             )
             
             # Load/initialize collection
             import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Sync load in running loop
-                    import asyncio as _asyncio
-                    _asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
-                else:
-                    asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
-            except RuntimeError:
+            import concurrent.futures
+
+            def _load_qdrant():
                 asyncio.run(self.vector_store.load(FAISS_INDEX_PATH, METADATA_PATH))
+
+            try:
+                asyncio.get_running_loop()
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_load_qdrant)
+                    future.result(timeout=QDRANT_TIMEOUT_SECONDS + 10)
+            except RuntimeError:
+                _load_qdrant()
             
             logger.info(f"Qdrant collection loaded: {self.vector_store.size:,} points")
             
@@ -197,6 +207,7 @@ class AsyncRAGPipeline:
         self.retriever = HybridRetriever(
             vector_store=self.vector_store,
             metadata=getattr(self.vector_store, 'metadata', []),
+            use_reranking=ENABLE_RERANKING,
         )
         
         # Simple in-memory cache (query -> response)
@@ -207,7 +218,8 @@ class AsyncRAGPipeline:
         logger.info(
             f"AsyncRAGPipeline initialized: model={self.model}, "
             f"top_k={self.top_k}, cache_enabled={self.enable_cache}, "
-            f"corpus_size={corpus_size}, use_qdrant={USE_QDRANT}"
+            f"corpus_size={corpus_size}, use_qdrant={USE_QDRANT}, "
+            f"use_reranking={ENABLE_RERANKING}"
         )
 
     async def suggest_reply(

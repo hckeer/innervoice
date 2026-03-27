@@ -485,6 +485,7 @@ def sync_suggest_reply(pipeline, user_message, session_id, k):
     """Synchronous wrapper for async pipeline (for Streamlit compatibility)."""
     import concurrent.futures
     import logging
+    from config import PIPELINE_QUERY_TIMEOUT_SECONDS
     
     logger = logging.getLogger(__name__)
     logger.info(f"sync_suggest_reply called with message: {user_message[:50]}")
@@ -499,7 +500,7 @@ def sync_suggest_reply(pipeline, user_message, session_id, k):
     logger.info("Starting ThreadPoolExecutor")
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(run_async)
-        result = future.result(timeout=30)  # 30 second timeout
+        result = future.result(timeout=PIPELINE_QUERY_TIMEOUT_SECONDS)
         logger.info("Got result from future")
         return result
 
@@ -1098,59 +1099,64 @@ with tab_index:
 
         st.markdown("---")
         if index_exists():
-            try:
-                pipeline = get_or_create_async_pipeline()
-                
-                # Get async stats
-                stats = asyncio.run(pipeline.get_stats())
-                
-                st.markdown("#### 📈 Pipeline Statistics")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("📄 Vectors", f"{stats['corpus_size']:,}")
-                col2.metric("💾 Cache Size", f"{stats['cache_size']:,}")
-                col3.metric("🧠 Embed Model", "all-MiniLM-L6-v2")
-                
-                col4, col5, col6 = st.columns(3)
-                col4.metric("📐 Index Type", "Hybrid")
-                col5.metric("🎯 Top-K", stats['top_k'])
-                col6.metric("🌡️ Temperature", stats['temperature'])
-                
-                # Show emotion distribution if available
+            st.info(
+                "Live pipeline stats can trigger heavy model loading on low-memory instances. "
+                "Load them only when needed."
+            )
+            if st.button("📈 Load Live Pipeline Stats", key="load_live_stats"):
                 try:
-                    import pickle
-                    with open(METADATA_PATH, "rb") as f:
-                        metadata = pickle.load(f)
-                    
-                    emotions = {}
-                    for record in metadata:
-                        emotion = record.get("metadata", {}).get("emotion", "neutral")
-                        emotions[emotion] = emotions.get(emotion, 0) + 1
-                    
-                    if emotions:
-                        st.markdown("---")
-                        st.markdown("#### 🎭 Emotion Distribution in Corpus")
-                        
-                        emotion_emoji = {
-                            "romantic": "💕",
-                            "flirty": "😘",
-                            "playful": "😄",
-                            "sad": "😢",
-                            "serious": "🧐",
-                            "curious": "🤔",
-                            "supportive": "🤗",
-                            "neutral": "😐",
-                        }
-                        
-                        for emotion, count in sorted(emotions.items(), key=lambda x: x[1], reverse=True):
-                            emoji = emotion_emoji.get(emotion, "💬")
-                            percentage = (count / len(metadata)) * 100
-                            st.progress(percentage / 100, text=f"{emoji} {emotion.title()}: {count:,} ({percentage:.1f}%)")
-                
+                    pipeline = get_or_create_async_pipeline()
+
+                    # Get async stats
+                    stats = asyncio.run(pipeline.get_stats())
+
+                    st.markdown("#### 📈 Pipeline Statistics")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("📄 Vectors", f"{stats['corpus_size']:,}")
+                    col2.metric("💾 Cache Size", f"{stats['cache_size']:,}")
+                    col3.metric("🧠 Embed Model", "all-MiniLM-L6-v2")
+
+                    col4, col5, col6 = st.columns(3)
+                    col4.metric("📐 Index Type", "Hybrid")
+                    col5.metric("🎯 Top-K", stats['top_k'])
+                    col6.metric("🌡️ Temperature", stats['temperature'])
+
+                    # Show emotion distribution if available
+                    try:
+                        import pickle
+                        with open(METADATA_PATH, "rb") as f:
+                            metadata = pickle.load(f)
+
+                        emotions = {}
+                        for record in metadata:
+                            emotion = record.get("metadata", {}).get("emotion", "neutral")
+                            emotions[emotion] = emotions.get(emotion, 0) + 1
+
+                        if emotions:
+                            st.markdown("---")
+                            st.markdown("#### 🎭 Emotion Distribution in Corpus")
+
+                            emotion_emoji = {
+                                "romantic": "💕",
+                                "flirty": "😘",
+                                "playful": "😄",
+                                "sad": "😢",
+                                "serious": "🧐",
+                                "curious": "🤔",
+                                "supportive": "🤗",
+                                "neutral": "😐",
+                            }
+
+                            for emotion, count in sorted(emotions.items(), key=lambda x: x[1], reverse=True):
+                                emoji = emotion_emoji.get(emotion, "💬")
+                                percentage = (count / len(metadata)) * 100
+                                st.progress(percentage / 100, text=f"{emoji} {emotion.title()}: {count:,} ({percentage:.1f}%)")
+
+                    except Exception as e:
+                        st.caption(f"No emotion metadata available ({e})")
+
                 except Exception as e:
-                    st.caption(f"No emotion metadata available ({e})")
-                    
-            except Exception as e:
-                st.warning(f"Could not load index stats: {e}")
+                    st.warning(f"Could not load index stats: {e}")
         else:
             st.info("No index built yet. Build one to see stats.")
 

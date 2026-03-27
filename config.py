@@ -44,6 +44,12 @@ USE_QDRANT = os.getenv("USE_QDRANT", "false").lower() == "true"
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "conversations")
+QDRANT_TIMEOUT_SECONDS = int(os.getenv("QDRANT_TIMEOUT_SECONDS", "20"))
+
+# Production stability toggles
+# Reranker is memory-heavy on small instances (e.g., Render free 512MB)
+ENABLE_RERANKING = os.getenv("ENABLE_RERANKING", "false").lower() == "true"
+PIPELINE_QUERY_TIMEOUT_SECONDS = int(os.getenv("PIPELINE_QUERY_TIMEOUT_SECONDS", "90"))
 
 # Ensure data directories exist at import time
 DATA_DIR.mkdir(parents=True, exist_ok=True)

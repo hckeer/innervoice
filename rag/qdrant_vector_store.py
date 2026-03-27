@@ -29,7 +29,8 @@ class QdrantVectorStore:
         url: str,
         api_key: str,
         collection_name: str = "conversations",
-        embedding_dim: int = 384  # all-MiniLM-L6-v2 dimension
+        embedding_dim: int = 384,  # all-MiniLM-L6-v2 dimension
+        timeout_seconds: int = 20,
     ):
         """
         Initialize Qdrant client.
@@ -44,13 +45,14 @@ class QdrantVectorStore:
         self.api_key = api_key
         self.collection_name = collection_name
         self.embedding_dim = embedding_dim
+        self.timeout_seconds = timeout_seconds
         self._lock = asyncio.Lock()
         
         # Initialize client
         self.client = QdrantClient(
             url=url,
             api_key=api_key,
-            timeout=60
+            timeout=timeout_seconds
         )
         
         # Cache for metadata (for backward compatibility)
